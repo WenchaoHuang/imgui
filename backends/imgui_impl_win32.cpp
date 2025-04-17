@@ -83,7 +83,7 @@
 //  2017-10-23: Inputs: Using Win32 ::SetCapture/::GetCapture() to retrieve mouse positions outside the client area when dragging.
 //  2016-11-12: Inputs: Only call Win32 ::SetCursor(nullptr) when io.MouseDrawCursor is set.
 
-#include "imgui.h"
+#include "imgui_internal.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_impl_win32.h"
 #ifndef WIN32_LEAN_AND_MEAN
@@ -1381,6 +1381,32 @@ static LRESULT CALLBACK ImGui_ImplWin32_WndProcHandler_PlatformWindow(HWND hWnd,
             // your main loop after calling UpdatePlatformWindows(). Iterate all viewports/platform windows and pass the flag to your windowing system.
             if (viewport->Flags & ImGuiViewportFlags_NoInputs)
                 result = HTTRANSPARENT;
+            //  Should Win32 modal takes over the window move operation, if the window can be dragged?
+            else if (ctx->HoveredWindow && !ImGui::IsAnyItemHovered() &&
+                     (!io.ConfigWindowsMoveFromTitleBarOnly || ctx->HoveredWindow->TitleBarRect().Contains(ImGui::GetMousePos())))
+            {
+                 result = DefWindowProc(hWnd, msg, wParam, lParam);
+                 return (result == HTCLIENT) ? HTCAPTION : result;
+            }
+            break;
+        case WM_ENTERSIZEMOVE:
+        case WM_EXITSIZEMOVE:
+        {
+            ImGui_ImplWin32_Data* bd = ImGui_ImplWin32_GetBackendData(io);
+            if (bd) break;
+
+            ImGuiMouseSource mouse_source = ImGui_ImplWin32_GetMouseSourceFromMessageExtraInfo();
+            int button = 0;     //  always the left button
+            if (::GetCapture() == nullptr)
+                ::SetCapture(hWnd); // Allow us to read mouse coordinates when dragging mouse outside of our window bounds.
+            else
+                ::ReleaseCapture();
+
+            bd->MouseButtonsDown |= 1 << button;
+            io.AddMouseSourceEvent(mouse_source);
+            io.AddMouseButtonEvent(button, msg == WM_ENTERSIZEMOVE);
+            break;
+        }
             break;
         }
     }
